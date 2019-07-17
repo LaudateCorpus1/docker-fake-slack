@@ -10,10 +10,7 @@ RUN useradd -u 1000 -M docker \
   && chown -R docker $APP_HOME \
   && true
 # USER docker
-
-
-VOLUME /messages/slack
-EXPOSE 9393
+# why does this^ cause problems?
 
 # download the app's dependencies early in the dockerfile (for caching)
 COPY --chown=docker go.mod go.sum $APP_HOME
@@ -21,5 +18,8 @@ RUN go mod download
 
 COPY --chown=docker . $APP_HOME
 RUN go install -v ./...
+
+# VOLUME /messages/slack
+EXPOSE 9393
 
 CMD ["docker-fake-slack"]
