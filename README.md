@@ -11,7 +11,8 @@ $ docker run -it -p 9393:9393 -e VIRTUAL_HOST=slack.docker ahuff44/fake-slack
 Note that the `VIRTUAL_HOST` environment variable will let you access the service
 at the host `slack.docker`, if you are using `dinghy` as part of your docker setup.
 
-The server will log all requests it recieved to timestamp-named files such as `/messages/slack/1563567115.463191`
+The server will log all requests it recieves to disk. The files will be placed at
+`/messages/slack/{{route}}_{{ts}}`; e.g. `/messages/slack/chat.postMessage_1563577444.405595`
 
 To use with docker-compose, here is a basic service block to start from:
 ```yaml

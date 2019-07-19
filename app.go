@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 
 	"net/http"
 	"net/url"
@@ -19,11 +20,6 @@ type requestInfo struct {
 }
 
 func main() {
-	runServer()
-	// testJSON()
-}
-
-func runServer() {
 	log.Printf("Starting server\n")
 
 	http.Handle("/api/auth.test", route(authTest))
@@ -120,7 +116,10 @@ func route(core routerCore) http.Handler {
 
 // logs a request + response to disk at /messages/slack/request_{{ts}}
 func logRequest(w http.ResponseWriter, ts string, info requestInfo) {
-	logFile, err := os.Create(fmt.Sprintf("/messages/slack/%s", ts))
+	routeStub := regexp.MustCompile(`/api/([^\/]+)`).ReplaceAllString(info.Path, "$1")
+	// e.g. /api/im.open -> im.open
+
+	logFile, err := os.Create(fmt.Sprintf("/messages/slack/%s_%s", routeStub, ts))
 	if err != nil {
 		msg := fmt.Sprintf("Could not create logfile: %s", err.Error())
 		log.Printf(msg)
