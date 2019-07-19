@@ -5,16 +5,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"os"
-	"time"
 
 	"net/http"
 	"net/url"
-)
-
-var (
-	notAuthedResponse = `{ "ok": false, "error": "not_authed" }`
 )
 
 type requestInfo struct {
@@ -22,12 +16,6 @@ type requestInfo struct {
 	Request  string `json:"request"`
 	Response string `json:"response"`
 	Ok       bool   `json:"ok"`
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
 }
 
 func main() {
@@ -44,13 +32,6 @@ func runServer() {
 	http.Handle("/api/chat.postMessage", route(chatPostMessage))
 
 	log.Fatal(http.ListenAndServe(":9393", nil))
-}
-
-// getTimestamp returns timestamps in the format the slack API uses
-func getTimestamp() string {
-	nanos := time.Now().UnixNano()
-	ts := fmt.Sprintf("%.6f", float64(nanos)/math.Pow(10, 9))
-	return ts
 }
 
 // a routerCore is similar to an http.HandlerFunc; wrap it with `route` to get an http.HandlerFunc
@@ -111,7 +92,7 @@ func route(core routerCore) http.Handler {
 				return
 			}
 		} else {
-			res = notAuthedResponse
+			res = `{"ok":false,"error":"not_authed"}`
 		}
 
 		//
@@ -164,22 +145,41 @@ func logRequest(w http.ResponseWriter, ts string, info requestInfo) {
 // route handlers:
 //
 
+// usersLookupByEmail succeeds always (remember, it won't be called if the actual auth check earlier doesn't succeed)
+// required fields: <none>
 func authTest(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
-	res = `{ "ok": true }`
+	res = `{"ok":true}`
 	ok = true
 	return
 }
 
+// usersLookupByEmail succeeds iff values.email is a valid email
+// required fields: email
 func usersLookupByEmail(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
-	res = `{ "ok": true, "user": { "id": "UXXXXXXXX" } }`
-	ok = true
-	return
+	email := values.Get("email")
+	if isEmail(email) {
+		res = `{"ok":true,"user":{"id":"UXXXXXXXX"}}`
+		ok = true
+		return
+	} else {
+		res = `{"ok":false,"error":"users_not_found"}`
+		ok = false
+		return
+	}
 }
 
+// imOpen succeeds iff values.user matches /U.{8}/
+// required fields: user
 func imOpen(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
-	res = `{ "ok": true, "channel": { "id": "DXXXXXXXX" } }`
-	ok = true
-	return
+	user := values.Get("user")
+	ok = user != "" && isSlackUser(user)
+	if ok {
+		res = `{"ok":true,"channel":{"id":"DXXXXXXXX"}}`
+		return
+	} else {
+		res = `{"ok":false,"error":"user_not_found"}`
+		return
+	}
 }
 
 type chatPostMessageResponse struct {
@@ -198,34 +198,45 @@ type chatPostMessageResponseMessage struct {
 	Attachments string `json:"attachments,omitempty"`
 }
 
-func stringDefault(s, fallback string) string {
-	if s == "" {
-		return fallback
-	} else {
-		return s
-	}
-}
-
+// chatPostMessage succeeds iff it has its required fields
+// required fields: channel, text
+// optional fields: username, attachments
 func chatPostMessage(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
+	channel := values.Get("channel")
+	text := values.Get("text")
+	username := stringDefault(values.Get("username"), "default-username")
+
+	if channel == "" {
+		res = `{"ok":false,"error":"channel_not_found"}`
+		ok = false
+		return
+	}
+	if text == "" {
+		res = `{"ok":false,"error":"no_text"}`
+		ok = false
+		return
+	}
+
 	resStruct := chatPostMessageResponse{
 		Ok:      true,
-		Channel: values.Get("channel"),
+		Channel: channel,
 		Ts:      ts,
 		Message: chatPostMessageResponseMessage{
 			Type:        "message",
 			Subtype:     "bot_message",
-			Text:        values.Get("text"),
+			Text:        text,
 			Ts:          ts,
-			Username:    stringDefault(values.Get("username"), "default-username"),
+			Username:    username,
 			BotID:       "BXXXXXXXX",
 			Attachments: values.Get("attachments"),
 		},
 	}
 	resBytes, err := json.Marshal(resStruct)
 	if err != nil {
-		ok = false
 		return
 	}
+
 	res = string(resBytes)
+	ok = true
 	return
 }
