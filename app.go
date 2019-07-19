@@ -11,29 +11,11 @@ import (
 
 	"net/http"
 	"net/url"
-
-	"github.com/nlopes/slack"
 )
 
 var (
 	notAuthedResponse = `{ "ok": false, "error": "not_authed" }`
 )
-
-type slackResponse struct {
-	Ok      bool                 `json:"ok"`
-	Channel string               `json:"channel"`
-	Ts      string               `json:"ts"`
-	Message slackResponseMessage `json:"message"`
-}
-type slackResponseMessage struct {
-	Type        string             `json:"type"`
-	Subtype     string             `json:"subtype"`
-	Text        string             `json:"text"`
-	Ts          string             `json:"ts"`
-	Username    string             `json:"username"`
-	BotID       string             `json:"bot_id"`
-	Attachments []slack.Attachment `json:"attachments,omitempty"`
-}
 
 type requestInfo struct {
 	Path     string `json:"path"`
@@ -74,18 +56,29 @@ func getTimestamp() string {
 // a routerCore is similar to an http.HandlerFunc; wrap it with `route` to get an http.HandlerFunc
 // params in:
 //   ts: timestamp
-//   req: the request body
+//   values: the values, parsed from the request body
 // params out:
 //   res: the response
 //   ok: return true, normally. If the request is malformed (client error), return false
 //   err: return nil, normally. If the server fails (server error), return the error
-type routerCore func(ts string, req string, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error)
+type routerCore func(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error)
 
 // route wraps a simple handler function in logging and auth-checking
 func route(core routerCore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ts := getTimestamp()
-		log.Printf("[%s] %s\n", ts, r.URL.Path)
+		log.Printf("[%s] %s %s\n", ts, r.Method, r.URL.Path)
+
+		//
+		// parse body
+		//
+
+		if r.Header.Get("Content-type") != "application/x-www-form-urlencoded" {
+			msg := fmt.Sprintf("only 'Content-type: application/x-www-form-urlencoded' is accepted (%s is no good)", r.Header.Get("Content-type"))
+			log.Printf(msg)
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
 
 		reqBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -96,11 +89,22 @@ func route(core routerCore) http.Handler {
 		}
 		req := string(reqBytes)
 
+		values, err := url.ParseQuery(req)
+		if err != nil {
+			msg := fmt.Sprintf("Could not parse body values: %s", err.Error())
+			log.Printf(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
+
+		//
+		// get response from core
+		//
+
 		var res string
-		token := r.Header.Get("Authorization")
-		ok := token != "" // extremely lenient authorization
+		ok := values.Get("token") != "" // extremely lenient authorization
 		if ok {
-			res, ok, err = core(ts, req, w, r)
+			res, ok, err = core(ts, values, w, r)
 			if err != nil {
 				log.Printf(err.Error())
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -109,8 +113,21 @@ func route(core routerCore) http.Handler {
 		} else {
 			res = notAuthedResponse
 		}
+
+		//
+		// send response
+		//
+
+		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, res)
 
+		//
+		// log request
+		//
+
+		// note that these loggers will also log the token
+		// but that's fine since you shouldn't be sending real tokens to this dummy service anyway
+		log.Printf("[%s] %s %s %s\n", ts, r.Method, r.URL.Path, values)
 		logRequest(w, ts, requestInfo{
 			Path:     r.URL.Path,
 			Request:  req,
@@ -147,51 +164,61 @@ func logRequest(w http.ResponseWriter, ts string, info requestInfo) {
 // route handlers:
 //
 
-func authTest(ts string, req string, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
-	ok = true
+func authTest(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
 	res = `{ "ok": true }`
+	ok = true
 	return
 }
 
-func usersLookupByEmail(ts string, req string, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
+func usersLookupByEmail(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
 	res = `{ "ok": true, "user": { "id": "UXXXXXXXX" } }`
 	ok = true
 	return
 }
 
-func imOpen(ts string, req string, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
+func imOpen(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
 	res = `{ "ok": true, "channel": { "id": "DXXXXXXXX" } }`
 	ok = true
 	return
 }
 
-func chatPostMessage(ts string, req string, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
-	// @TODO check for content-type application/json header?
+type chatPostMessageResponse struct {
+	Ok      bool                           `json:"ok"`
+	Channel string                         `json:"channel"`
+	Ts      string                         `json:"ts"`
+	Message chatPostMessageResponseMessage `json:"message"`
+}
+type chatPostMessageResponseMessage struct {
+	Type        string `json:"type"`
+	Subtype     string `json:"subtype"`
+	Text        string `json:"text"`
+	Ts          string `json:"ts"`
+	Username    string `json:"username"`
+	BotID       string `json:"bot_id"`
+	Attachments string `json:"attachments,omitempty"`
+}
 
-	values, err := url.ParseQuery(req)
-	if err != nil {
-		ok = false
-		return
+func stringDefault(s, fallback string) string {
+	if s == "" {
+		return fallback
+	} else {
+		return s
 	}
-	// fmt.Printf("%v\n", values)
-	_ = values
+}
 
-	//
-	// respond to the request
-	//
-
-	resStruct := slackResponse{
+func chatPostMessage(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
+	resStruct := chatPostMessageResponse{
 		Ok:      true,
-		Channel: "TODO",
+		Channel: values.Get("channel"),
 		Ts:      ts,
-		Message: slackResponseMessage{
-			Type:     "message",
-			Subtype:  "bot_message",
-			Text:     "TODO",
-			Ts:       ts,
-			Username: "TODO",
-			BotID:    "TODO",
-			// Attachments []slack.Attachment // @TODO
+		Message: chatPostMessageResponseMessage{
+			Type:        "message",
+			Subtype:     "bot_message",
+			Text:        values.Get("text"),
+			Ts:          ts,
+			Username:    stringDefault(values.Get("username"), "default-username"),
+			BotID:       "BXXXXXXXX",
+			Attachments: values.Get("attachments"),
 		},
 	}
 	resBytes, err := json.Marshal(resStruct)
@@ -200,6 +227,5 @@ func chatPostMessage(ts string, req string, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	res = string(resBytes)
-	w.Header().Set("Content-Type", "application/json")
 	return
 }
