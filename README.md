@@ -4,8 +4,6 @@ A minimal docker image to fake the Slack API. Currently only concerned with the 
 
 ## Getting started
 
-### Running the server
-
 ```
 $ docker run -it -p 9393:9393 -e VIRTUAL_HOST=slack.docker ahuff44/fake-slack
 ```
@@ -13,7 +11,19 @@ $ docker run -it -p 9393:9393 -e VIRTUAL_HOST=slack.docker ahuff44/fake-slack
 Note that the `VIRTUAL_HOST` environment variable will let you access the service
 at the host `slack.docker`, if you are using `dinghy` as part of your docker setup.
 
-### API
+The server will log all requests it recieved to timestamp-named files such as `/messages/slack/1563567115.463191`
+
+To use with docker-compose, here is a basic service block to start from:
+```yaml
+  slack:
+    image: ahuff44/fake-slack
+    volumes:
+      - "/messages"
+    ports:
+      - "9393"
+```
+
+## API
 
 The api is as simple as possible and returns dummy data.
 Some endpoints (especially `users.lookupByEmail`) don't include a full

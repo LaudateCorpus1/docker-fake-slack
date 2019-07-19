@@ -204,7 +204,7 @@ type chatPostMessageResponseMessage struct {
 func chatPostMessage(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
 	channel := values.Get("channel")
 	text := values.Get("text")
-	username := stringDefault(values.Get("username"), "default-username")
+	username := stringOrDefault(values.Get("username"), "default-username")
 
 	if channel == "" {
 		res = `{"ok":false,"error":"channel_not_found"}`

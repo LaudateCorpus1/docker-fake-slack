@@ -2,31 +2,20 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"regexp"
 	"time"
 )
 
-// isEmail returns whether the given string is an email (by using a lenient regex)
 func isEmail(s string) bool {
-	return matches("^.+@.+\\..+$", s)
+	return regexp.MustCompile(`^.+@.+\..+$`).MatchString(s)
 }
 
 func isSlackUser(s string) bool {
-	return matches("^U.{8}$", s)
+	return regexp.MustCompile(`^U.{8}$`).MatchString(s)
 }
 
-func matches(prog, input string) bool {
-	re, err := regexp.Compile(prog)
-	if err != nil {
-		log.Printf("Error while compiling regex: %s", err.Error())
-		return false
-	}
-	return re.Match([]byte(input))
-}
-
-func stringDefault(s, fallback string) string {
+func stringOrDefault(s, fallback string) string {
 	if s == "" {
 		return fallback
 	} else {
