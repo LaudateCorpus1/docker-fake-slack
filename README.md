@@ -19,7 +19,7 @@ To use with docker-compose, here is a basic service block to start from:
   slack:
     image: ahuff44/fake-slack
     volumes:
-      - "/messages"
+      - "/messages/slack"
     ports:
       - "9393"
 ```
