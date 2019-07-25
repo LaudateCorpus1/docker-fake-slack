@@ -198,6 +198,7 @@ type chatPostMessageResponseMessage struct {
 }
 
 // chatPostMessage succeeds iff it has its required fields
+//   addendum: it also fails if the text is "RATE_LIMIT_ME", with a rate_limited error
 // required fields: channel, text
 // optional fields: username, attachments
 func chatPostMessage(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
@@ -212,6 +213,11 @@ func chatPostMessage(ts string, values url.Values, w http.ResponseWriter, r *htt
 	}
 	if text == "" {
 		res = `{"ok":false,"error":"no_text"}`
+		ok = false
+		return
+	}
+	if text == "RATE_LIMIT_ME" {
+		res = `{"ok":false,"error":"rate_limited"}`
 		ok = false
 		return
 	}
