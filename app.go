@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strings"
 
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ func main() {
 	http.Handle("/api/auth.test", route(authTest))
 	http.Handle("/api/users.lookupByEmail", route(usersLookupByEmail))
 	http.Handle("/api/im.open", route(imOpen))
+	http.Handle("/api/conversations.open", route(conversationsOpen))
 	http.Handle("/api/chat.postMessage", route(chatPostMessage))
 
 	log.Fatal(http.ListenAndServe(":9393", nil))
@@ -160,14 +162,14 @@ func usersLookupByEmail(ts string, values url.Values, w http.ResponseWriter, r *
 		res = `{"ok":true,"user":{"id":"UXXXXXXXX"}}`
 		ok = true
 		return
-	} else {
-		res = `{"ok":false,"error":"users_not_found"}`
-		ok = false
-		return
 	}
+	res = `{"ok":false,"error":"users_not_found"}`
+	ok = false
+	return
+
 }
 
-// imOpen succeeds iff values.user matches /U.{8}/
+// imOpen succeeds if values.user matches /U.{8}/
 // required fields: user
 func imOpen(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
 	user := values.Get("user")
@@ -175,10 +177,30 @@ func imOpen(ts string, values url.Values, w http.ResponseWriter, r *http.Request
 	if ok {
 		res = `{"ok":true,"channel":{"id":"DXXXXXXXX"}}`
 		return
-	} else {
-		res = `{"ok":false,"error":"user_not_found"}`
+	}
+	res = `{"ok":false,"error":"user_not_found"}`
+	return
+}
+
+// conversationsOpen succeeds if every record in values.users matches /U.{8}/
+// historically this was im.open, but that is being deprecated by Slack
+// https://api.slack.com/methods/im.open
+// required fields: users
+func conversationsOpen(ts string, values url.Values, w http.ResponseWriter, r *http.Request) (res string, ok bool, err error) {
+	users := strings.Split(values.Get("users"), ",")
+	ok = len(users) > 0
+	for _, user := range users {
+		if !isSlackUser(user) {
+			ok = false
+		}
+	}
+
+	if ok {
+		res = `{"ok":true,"channel":{"id":"DXXXXXXXX"}}`
 		return
 	}
+	res = `{"ok":false,"error":"user_not_found"}`
+	return
 }
 
 type chatPostMessageResponse struct {
